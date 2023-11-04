@@ -13,6 +13,7 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use clap::Parser;
+use proto::TransportConfig;
 use tracing::{error, info};
 use url::Url;
 
@@ -39,6 +40,33 @@ struct Opt {
     /// Simulate NAT rebinding after connecting
     #[clap(long = "rebind")]
     rebind: bool,
+
+    /// Whether the Additional Addresses extension is enabled.
+    #[clap(long = "adda")]
+    enable_adda: bool,
+}
+
+// Implementation of `ServerCertVerifier` that verifies everything as trustworthy.
+struct SkipServerVerification;
+
+impl SkipServerVerification {
+    fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+}
+
+impl rustls::client::ServerCertVerifier for SkipServerVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::Certificate,
+        _intermediates: &[rustls::Certificate],
+        _server_name: &rustls::ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
+        _ocsp_response: &[u8],
+        _now: std::time::SystemTime,
+    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
+    }
 }
 
 fn main() {
@@ -86,16 +114,20 @@ async fn run(options: Opt) -> Result<()> {
         }
     }
     let mut client_crypto = rustls::ClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    .with_safe_defaults()
+    .with_custom_certificate_verifier(SkipServerVerification::new())
+    .with_no_client_auth();
 
     client_crypto.alpn_protocols = common::ALPN_QUIC_HTTP.iter().map(|&x| x.into()).collect();
     if options.keylog {
         client_crypto.key_log = Arc::new(rustls::KeyLogFile::new());
     }
 
-    let client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
+    let mut client_config = quinn::ClientConfig::new(Arc::new(client_crypto));
+    let mut transport_config = TransportConfig::default();
+    transport_config.additional_addresses(options.enable_adda);
+    let transport_config = Arc::new(transport_config);
+    client_config.transport_config(transport_config);
     let mut endpoint = quinn::Endpoint::client("[::]:0".parse().unwrap())?;
     endpoint.set_default_client_config(client_config);
 

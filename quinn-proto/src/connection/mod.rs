@@ -235,6 +235,13 @@ pub struct Connection {
     stats: ConnectionStats,
     /// QUIC version used for the connection.
     version: u32,
+
+    /// Additional addresses.
+    additional_addresses: Vec<SocketAddr>,
+    /// Whether the additional addresses last version is up to date.
+    adda_up_to_date: bool,
+    /// Additional Addresses sequence number.
+    adda_seq_num: u64,
 }
 
 impl Connection {
@@ -364,6 +371,9 @@ impl Connection {
             rng,
             stats: ConnectionStats::default(),
             version,
+            additional_addresses: Vec::new(),
+            adda_up_to_date: true, // By default, nothing to advertise.
+            adda_seq_num: 0,
         };
         if side.is_client() {
             // Kick off the connection
@@ -1232,6 +1242,24 @@ impl Connection {
     /// `count`s increase both minimum and worst-case memory consumption.
     pub fn set_max_concurrent_streams(&mut self, dir: Dir, count: VarInt) {
         self.streams.set_max_concurrent(dir, count);
+    }
+
+    /// Set the additional addresses for the server.
+    pub fn set_additional_addresses(&mut self, additional_addresses: &[SocketAddr]) {
+        self.additional_addresses = additional_addresses.to_vec();
+        self.adda_up_to_date = false;
+        eprintln!("Set additional addresses");
+    }
+
+    fn additional_addresses_len(&self) -> usize {
+        8 + VarInt::from_u64(self.adda_seq_num).unwrap().size()
+            + VarInt::from_u64(self.additional_addresses.len() as u64)
+                .unwrap()
+                .size()
+            + self
+                .additional_addresses
+                .iter()
+                .fold(0, |t, a| t + if a.is_ipv4() { 4 } else { 16 })
     }
 
     /// Current number of remotely initiated streams that may be concurrently open
@@ -2773,6 +2801,19 @@ impl Connection {
                         self.discard_space(now, SpaceId::Handshake);
                     }
                 }
+                Frame::AdditionalAddresses(frame) => {
+                    trace!("Received an ADDITIONAL_ADDRESSES frame: {:?}", frame);
+                    if frame.sequence > self.adda_seq_num {
+                        self.adda_seq_num = frame.sequence;
+                        self.adda_up_to_date = false;
+                        self.additional_addresses = frame
+                            .additional_addresses
+                            .iter()
+                            .map(|addr| SocketAddr::new(addr.ip_addr, addr.ip_port))
+                            .collect();
+                    }
+                    // AA-TODO: maybe add some stuff here to trigger connection migration, or removal based on the results from the server.
+                }
             }
         }
 
@@ -3094,6 +3135,31 @@ impl Connection {
             buf.write_var(seq);
             sent.retransmits.get_or_create().retire_cids.push(seq);
             self.stats.frame_tx.retire_connection_id += 1;
+        }
+
+        if !self.adda_up_to_date
+            && self.peer_params.additional_addresses
+            && buf.len() + self.additional_addresses_len() < max_size
+        {
+            buf.write(frame::Type::ADDITIONAL_ADDRESSES);
+            buf.write(VarInt::from_u64(self.adda_seq_num).unwrap());
+            buf.write(VarInt::from_u64(self.additional_addresses.len() as u64).unwrap());
+            for add_addr in self.additional_addresses.iter() {
+                match add_addr.ip() {
+                    IpAddr::V4(ipv4) => {
+                        buf.write(4u8);
+                        buf.write(ipv4);
+                    }
+                    IpAddr::V6(ipv6) => {
+                        buf.write(6u8);
+                        buf.write(ipv6);
+                    }
+                }
+                buf.write(add_addr.port());
+            }
+            trace!("Sent an ADDITIONAL_ADDRESSES frame");
+            self.adda_up_to_date = true;
+            self.adda_seq_num += 1;
         }
 
         // DATAGRAM

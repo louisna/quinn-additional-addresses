@@ -86,6 +86,7 @@ impl FrameStats {
             Frame::AckFrequency(_) => self.ack_frequency += 1,
             Frame::ImmediateAck => self.immediate_ack += 1,
             Frame::HandshakeDone => self.handshake_done += 1,
+            Frame::AdditionalAddresses(_) => eprintln!("Saw a new AdditionalAddresses frame"),
         }
     }
 }

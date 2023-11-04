@@ -4,7 +4,7 @@
 
 use std::{
     ascii, fs, io,
-    net::SocketAddr,
+    net::{SocketAddr, IpAddr},
     path::{self, Path, PathBuf},
     str,
     sync::Arc,
@@ -37,6 +37,9 @@ struct Opt {
     /// Address to listen on
     #[clap(long = "listen", default_value = "[::1]:4433")]
     listen: SocketAddr,
+    /// Additional addresses for the server. If none is provided, does not add the additional_addresses transport parameter during the handshake.
+    #[clap(long = "adda", num_args(0..=1))]
+    adda: Vec<SocketAddr>,
 }
 
 fn main() {
@@ -132,6 +135,7 @@ async fn run(options: Opt) -> Result<()> {
     let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(server_crypto));
     let transport_config = Arc::get_mut(&mut server_config.transport).unwrap();
     transport_config.max_concurrent_uni_streams(0_u8.into());
+    transport_config.additional_addresses(!options.adda.is_empty());
     if options.stateless_retry {
         server_config.use_retry(true);
     }
@@ -146,7 +150,7 @@ async fn run(options: Opt) -> Result<()> {
 
     while let Some(conn) = endpoint.accept().await {
         info!("connection incoming");
-        let fut = handle_connection(root.clone(), conn);
+        let fut = handle_connection(root.clone(), conn, options.adda.clone());
         tokio::spawn(async move {
             if let Err(e) = fut.await {
                 error!("connection failed: {reason}", reason = e.to_string())
@@ -157,8 +161,9 @@ async fn run(options: Opt) -> Result<()> {
     Ok(())
 }
 
-async fn handle_connection(root: Arc<Path>, conn: quinn::Connecting) -> Result<()> {
+async fn handle_connection(root: Arc<Path>, conn: quinn::Connecting, additional_addresses: Vec<SocketAddr>) -> Result<()> {
     let connection = conn.await?;
+    connection.set_additional_addresses(&additional_addresses);
     let span = info_span!(
         "connection",
         remote = %connection.remote_address(),

@@ -2,6 +2,7 @@ use std::{
     fmt::{self, Write},
     io, mem,
     ops::{Range, RangeInclusive},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -133,6 +134,7 @@ frame_types! {
     ACK_FREQUENCY = 0xaf,
     IMMEDIATE_ACK = 0xac,
     // DATAGRAM
+    ADDITIONAL_ADDRESSES = 0x925adda01,
 }
 
 const STREAM_TYS: RangeInclusive<u64> = RangeInclusive::new(0x08, 0x0f);
@@ -163,6 +165,7 @@ pub(crate) enum Frame {
     AckFrequency(AckFrequency),
     ImmediateAck,
     HandshakeDone,
+    AdditionalAddresses(AdditionalAddresses),
 }
 
 impl Frame {
@@ -204,6 +207,7 @@ impl Frame {
             AckFrequency(_) => Type::ACK_FREQUENCY,
             ImmediateAck => Type::IMMEDIATE_ACK,
             HandshakeDone => Type::HANDSHAKE_DONE,
+            AdditionalAddresses(_) => Type::ADDITIONAL_ADDRESSES,
         }
     }
 
@@ -682,6 +686,28 @@ impl Iter {
                 reordering_threshold: self.bytes.get()?,
             }),
             Type::IMMEDIATE_ACK => Frame::ImmediateAck,
+            Type::ADDITIONAL_ADDRESSES => {
+                let seq_num = self.bytes.get_var()?;
+                let nb_addr = self.bytes.get_var()?;
+                let additional_addresses = (0..nb_addr).map(|_| {
+                    let version = self.bytes.get_u8();
+                    let ip_addr = if version == 4 {
+                        IpAddr::V4(Ipv4Addr::from(self.bytes.get_u32()))
+                    } else {
+                        IpAddr::V6(Ipv6Addr::from(self.bytes.get_u128()))
+                    };
+                    AdditionalAddress {
+                        version,
+                        ip_addr,
+                        ip_port: self.bytes.get_u16(),
+                    }
+                }).collect();
+                eprintln!("Received an Additional Addresses frame");
+                Frame::AdditionalAddresses(AdditionalAddresses {
+                    sequence: seq_num,
+                    additional_addresses,
+                })
+            },
             _ => {
                 if let Some(s) = ty.stream() {
                     Frame::Stream(Stream {
@@ -923,6 +949,51 @@ impl AckFrequency {
         buf.write(self.reordering_threshold);
     }
 }
+
+#[derive(Debug, Clone)]
+pub(crate) struct AdditionalAddresses {
+    pub(crate) sequence: u64,
+    pub(crate) additional_addresses: Vec<AdditionalAddress>,
+}
+
+// impl AdditionalAddresses {
+//     pub(crate) fn encode(&self, out: &mut BytesMut, mut max_len: usize) {
+//         out.write(Type::ADDITIONAL_ADDRESSES); // 8 bytes.
+//         out.write(self.sequence); // <= 8 bytes.
+//         out.write(self.additional_addresses_count); // <= 8 bytes.
+
+//         max_len -= 8 + self.sequence.size() + self.additional_addresses_count.size();
+//         for add_addr in self.additional_addresses.iter() {
+//             if max_len < add_addr.size() {
+//                 break;
+//             }
+//             add_addr.encode(out);
+//             max_len -= add_addr.size();
+//         }
+//     }
+// }
+
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct AdditionalAddress {
+    pub(crate) version: u8,
+    pub(crate) ip_addr: IpAddr,
+    pub(crate) ip_port: u16,
+}
+
+// impl AdditionalAddress {
+//     pub(crate) fn size(&self) -> usize {
+//         1 + if self.ip_addr.is_ipv4() { 4 } else { 16 } + 2
+//     }
+
+//     pub(crate) fn encode(&self, out: &mut BytesMut) {
+//         out.write(self.version);
+//         match self.ip_addr {
+//             IpAddr::V4(ip4) => out.write(ip4),
+//             IpAddr::V6(ip6) => out.write(ip6),
+//         }
+//         out.write(self.ip_port);
+//     }
+// }
 
 #[cfg(test)]
 mod test {

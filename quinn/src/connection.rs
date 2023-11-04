@@ -568,6 +568,19 @@ impl Connection {
         // May need to send MAX_STREAMS to make progress
         conn.wake();
     }
+
+    /// Add new Additional Addresses for the server. Erases previously set Additional Addresses.
+    /// Returns an error if this is not the server of the connection.
+    pub fn set_additional_addresses(&self, additional_addresses: &[SocketAddr]) {
+        let mut conn = self.0.state.lock("set_additional_addresses");
+        if conn.inner.side().is_client() {
+            eprintln!("Client attempts to add new addresses");
+            return;
+        }
+        conn.inner.set_additional_addresses(additional_addresses);
+        // May need to send ADDITIONAL_ADDRESSES to make progress.
+        conn.wake();
+    }
 }
 
 pin_project! {
