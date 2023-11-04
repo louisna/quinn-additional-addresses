@@ -99,6 +99,8 @@ macro_rules! make_struct {
             pub(crate) stateless_reset_token: Option<ResetToken>,
             /// The server's preferred address for communication after handshake completion
             pub(crate) preferred_address: Option<PreferredAddress>,
+            /// Additional addresses extension.
+            pub(crate) additional_addresses: bool,
         }
 
         // We deliberately don't implement the `Default` trait, since that would be public, and
@@ -120,6 +122,7 @@ macro_rules! make_struct {
                     retry_src_cid: None,
                     stateless_reset_token: None,
                     preferred_address: None,
+                    additional_addresses: false,
                 }
             }
         }
@@ -160,6 +163,7 @@ impl TransportParameters {
             min_ack_delay: Some(
                 VarInt::from_u64(u64::try_from(TIMER_GRANULARITY.as_micros()).unwrap()).unwrap(),
             ),
+            additional_addresses: config.additional_addresses,
             ..Self::default()
         }
     }
@@ -349,6 +353,11 @@ impl TransportParameters {
             w.write_var(x.size() as u64);
             w.write(x);
         }
+
+        if self.additional_addresses {
+            w.write_var(0x925adda01);
+            w.write_var(0);
+        }
     }
 
     /// Decode `TransportParameters` from buffer
@@ -413,6 +422,12 @@ impl TransportParameters {
                     _ => return Err(Error::Malformed),
                 },
                 0xff04de1a => params.min_ack_delay = Some(r.get().unwrap()),
+                0x925adda01 => {
+                    if len != 0 || params.additional_addresses {
+                        return Err(Error::Malformed);
+                    }
+                    params.additional_addresses = true;
+                }
                 _ => {
                     macro_rules! parse {
                         {$($(#[$doc:meta])* $name:ident ($code:expr) = $default:expr,)*} => {

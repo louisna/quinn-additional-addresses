@@ -53,6 +53,8 @@ pub struct TransportConfig {
     pub(crate) congestion_controller_factory: Arc<dyn congestion::ControllerFactory + Send + Sync>,
 
     pub(crate) enable_segmentation_offload: bool,
+
+    pub(crate) additional_addresses: bool,
 }
 
 impl TransportConfig {
@@ -313,6 +315,12 @@ impl TransportConfig {
         self.enable_segmentation_offload = enabled;
         self
     }
+
+    /// Whether the "Additional addresses" extension is enabled on the endpoint.
+    pub fn additional_addresses(&mut self, enabled: bool) -> &mut Self {
+        self.additional_addresses = enabled;
+        self
+    }
 }
 
 impl Default for TransportConfig {
@@ -352,6 +360,8 @@ impl Default for TransportConfig {
             congestion_controller_factory: Arc::new(congestion::CubicConfig::default()),
 
             enable_segmentation_offload: true,
+
+            additional_addresses: false,
         }
     }
 }
@@ -383,6 +393,7 @@ impl fmt::Debug for TransportConfig {
                 deterministic_packet_numbers: _,
             congestion_controller_factory: _,
             enable_segmentation_offload,
+            additional_addresses,
         } = self;
         fmt.debug_struct("TransportConfig")
             .field("max_concurrent_bidi_streams", max_concurrent_bidi_streams)
@@ -410,6 +421,7 @@ impl fmt::Debug for TransportConfig {
             .field("datagram_send_buffer_size", datagram_send_buffer_size)
             .field("congestion_controller_factory", &"[ opaque ]")
             .field("enable_segmentation_offload", enable_segmentation_offload)
+            .field("additional_addresses", additional_addresses)
             .finish()
     }
 }
