@@ -416,29 +416,21 @@ fn stress_both_windows() {
 }
 
 fn run_echo(args: EchoArgs) {
-    // Use small receive windows
-    let mut transport_config = TransportConfig::default();
-    if let Some(receive_window) = args.receive_window {
-        transport_config.receive_window(receive_window.try_into().unwrap());
-    }
-    if let Some(stream_receive_window) = args.stream_receive_window {
-        transport_config.stream_receive_window(stream_receive_window.try_into().unwrap());
-    }
-    transport_config.max_concurrent_bidi_streams(1_u8.into());
-    transport_config.max_concurrent_uni_streams(1_u8.into());
-    let transport_config = Arc::new(transport_config);
-
-    run_echo_from_configs(args, transport_config.clone(), transport_config.clone())
-}
-
-fn run_echo_from_configs(
-    args: EchoArgs,
-    server_transport_config: Arc<TransportConfig>,
-    client_transport_config: Arc<TransportConfig>,
-) {
     let _guard = subscribe();
     let runtime = rt_basic();
     let handle = {
+        // Use small receive windows
+        let mut transport_config = TransportConfig::default();
+        if let Some(receive_window) = args.receive_window {
+            transport_config.receive_window(receive_window.try_into().unwrap());
+        }
+        if let Some(stream_receive_window) = args.stream_receive_window {
+            transport_config.stream_receive_window(stream_receive_window.try_into().unwrap());
+        }
+        transport_config.max_concurrent_bidi_streams(1_u8.into());
+        transport_config.max_concurrent_uni_streams(1_u8.into());
+        let transport_config = Arc::new(transport_config);
+
         // We don't use the `endpoint` helper here because we want two different endpoints with
         // different addresses.
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
@@ -448,7 +440,7 @@ fn run_echo_from_configs(
         let mut server_config =
             crate::ServerConfig::with_single_cert(vec![cert.clone()], key).unwrap();
 
-        server_config.transport = server_transport_config.clone();
+        server_config.transport = transport_config.clone();
         let server_sock = UdpSocket::bind(args.server_addr).unwrap();
         let server_addr = server_sock.local_addr().unwrap();
         let server = {
@@ -477,7 +469,7 @@ fn run_echo_from_configs(
             Endpoint::client(args.client_addr).unwrap()
         };
         let mut client_config = ClientConfig::new(Arc::new(client_crypto));
-        client_config.transport_config(client_transport_config);
+        client_config.transport_config(transport_config);
         client.set_default_client_config(client_config);
 
         let handle = runtime.spawn(async move {
@@ -751,32 +743,4 @@ async fn two_datagram_readers() {
     );
     assert!(*a == *b"one" || *b == *b"one");
     assert!(*a == *b"two" || *b == *b"two");
-}
-
-#[test]
-fn add_addr_handshake() {
-    let args = EchoArgs {
-        client_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
-        server_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
-        nr_streams: 1,
-        stream_size: 100,
-        receive_window: None,
-        stream_receive_window: None,
-    };
-
-    let mut transport_config = TransportConfig::default();
-    transport_config.additional_addresses(true);
-
-    if let Some(receive_window) = args.receive_window {
-        transport_config.receive_window(receive_window.try_into().unwrap());
-    }
-    if let Some(stream_receive_window) = args.stream_receive_window {
-        transport_config.stream_receive_window(stream_receive_window.try_into().unwrap());
-    }
-    transport_config.max_concurrent_bidi_streams(1_u8.into());
-    transport_config.max_concurrent_uni_streams(1_u8.into());
-
-    let transport_config = Arc::new(transport_config);
-
-    run_echo_from_configs(args, transport_config.clone(), transport_config.clone());
 }

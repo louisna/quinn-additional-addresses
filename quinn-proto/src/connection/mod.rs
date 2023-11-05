@@ -1024,7 +1024,11 @@ impl Connection {
                 {
                     self.reset_cid_retirement();
                 }
-            }
+            },
+            AdditionalAddresses(addresses) => {
+                self.additional_addresses = addresses;
+                eprintln!("Additional addresses set on in handle event connection");
+            },
         }
     }
 
@@ -1249,6 +1253,20 @@ impl Connection {
         self.additional_addresses = additional_addresses.to_vec();
         self.adda_up_to_date = false;
         eprintln!("Set additional addresses");
+        self.spaces[SpaceId::Data]
+            .pending
+            .additional_addresses = true;
+    }
+
+    /// Get the additional addresses set by the server.
+    /// Returns an empty slice if the option is disabled or empty new addresses.
+    pub fn get_additional_addresses(&self) -> &[SocketAddr] {
+        &self.additional_addresses
+    }
+
+    /// Whether new additional addresses are available.
+    pub fn new_additional_addresses(&self) -> bool {
+        !self.adda_up_to_date
     }
 
     fn additional_addresses_len(&self) -> usize {
@@ -2813,6 +2831,8 @@ impl Connection {
                             .collect();
                     }
                     // AA-TODO: maybe add some stuff here to trigger connection migration, or removal based on the results from the server.
+                    self.events.push_back(Event::AdditionalAddresses(self.additional_addresses.clone()));
+                    self.endpoint_events.push_back(EndpointEventInner::AdditionalAddresses(self.additional_addresses.clone()));
                 }
             }
         }
@@ -3137,10 +3157,12 @@ impl Connection {
             self.stats.frame_tx.retire_connection_id += 1;
         }
 
+        // ADDITIONAL_ADDRESSES.
         if !self.adda_up_to_date
             && self.peer_params.additional_addresses
             && buf.len() + self.additional_addresses_len() < max_size
         {
+            self.adda_seq_num += 1;
             buf.write(frame::Type::ADDITIONAL_ADDRESSES);
             buf.write(VarInt::from_u64(self.adda_seq_num).unwrap());
             buf.write(VarInt::from_u64(self.additional_addresses.len() as u64).unwrap());
@@ -3159,7 +3181,7 @@ impl Connection {
             }
             trace!("Sent an ADDITIONAL_ADDRESSES frame");
             self.adda_up_to_date = true;
-            self.adda_seq_num += 1;
+            self.spaces[space_id].pending.additional_addresses = false;
         }
 
         // DATAGRAM
@@ -3664,6 +3686,8 @@ pub enum Event {
     Stream(StreamEvent),
     /// One or more application datagrams have been received
     DatagramReceived,
+    /// Additional Addresses received.
+    AdditionalAddresses(Vec<SocketAddr>),
 }
 
 struct PathResponse {

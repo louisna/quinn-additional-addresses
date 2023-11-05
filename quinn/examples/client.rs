@@ -146,6 +146,11 @@ async fn run(options: Opt) -> Result<()> {
         .await
         .map_err(|e| anyhow!("failed to connect: {}", e))?;
     eprintln!("connected at {:?}", start.elapsed());
+    
+    // Wait for additional addresses from the server.
+    let additional_addresses = conn.accept_additional_addresses().await?;
+    eprintln!("CLIENT HAS ADDITIONAL ADDRESSES: {:?}", additional_addresses);
+
     let (mut send, mut recv) = conn
         .open_bi()
         .await

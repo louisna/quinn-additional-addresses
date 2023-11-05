@@ -314,6 +314,14 @@ impl Connection {
         }
     }
 
+    /// Receive additional addresses from the server.
+    pub fn accept_additional_addresses(&self) -> AdditionalAddresses<'_> {
+        AdditionalAddresses {
+            conn: &self.0,
+            notify: self.0.shared.additional_addresses.notified(),
+        }
+    }
+
     /// Wait for the connection to be closed for any reason
     ///
     /// Despite the return type's name, closed connections are often not an error condition at the
@@ -749,6 +757,43 @@ impl Future for ReadDatagram<'_> {
     }
 }
 
+pin_project! {
+    /// Future produced by ['Connection::accept_additional_addresses'].
+    pub struct AdditionalAddresses<'a> {
+        conn: &'a ConnectionRef,
+        #[pin]
+        notify: Notified<'a>,
+    }
+}
+
+impl Future for AdditionalAddresses<'_> {
+    type Output = Result<Vec<SocketAddr>, ConnectionError>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let additional_addresses = ready!(poll_adda(ctx, this.conn, this.notify))?;
+        Poll::Ready(Ok(additional_addresses))
+    }
+}
+
+fn poll_adda<'a>(ctx: &mut Context<'_>, conn: &'a ConnectionRef, mut notify: Pin<&mut Notified<'a>>) -> Poll<Result<Vec<SocketAddr>, ConnectionError>> {
+    let state = conn.state.lock("poll_adda");
+    println!("UNLOCKED: {} and {:?}", state.inner.new_additional_addresses(), state.inner.get_additional_addresses());
+    if state.inner.new_additional_addresses() {
+        return Poll::Ready(Ok(state.inner.get_additional_addresses().to_vec()));
+    } else if let Some(ref e) = state.error {
+        return Poll::Ready(Err(e.clone()));
+    }
+    loop {
+        match notify.as_mut().poll(ctx) {
+            // `state` lock ensures we didn't race with readiness
+            Poll::Pending => return Poll::Pending,
+            // Spurious wakeup, get a new future
+            Poll::Ready(()) => notify.set(conn.shared.additional_addresses.notified()),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct ConnectionRef(Arc<ConnectionInner>);
 
@@ -839,6 +884,8 @@ pub(crate) struct Shared {
     stream_incoming: [Notify; 2],
     datagrams: Notify,
     closed: Notify,
+    /// Notified when additional addresses are available.
+    additional_addresses: Notify,
 }
 
 pub(crate) struct State {
@@ -998,6 +1045,10 @@ impl State {
                     if let Some(writer) = self.blocked_writers.remove(&id) {
                         writer.wake();
                     }
+                },
+                AdditionalAddresses(addresses) => {
+                    eprintln!("Notify waiters of additional addreses");
+                    shared.additional_addresses.notify_waiters();
                 }
             }
         }
@@ -1077,6 +1128,7 @@ impl State {
         shared.stream_incoming[Dir::Uni as usize].notify_waiters();
         shared.stream_incoming[Dir::Bi as usize].notify_waiters();
         shared.datagrams.notify_waiters();
+        shared.additional_addresses.notify_waiters();
         for (_, x) in self.finishing.drain() {
             let _ = x.send(Some(WriteError::ConnectionLost(reason.clone())));
         }

@@ -2760,3 +2760,31 @@ fn reject_new_connections() {
     pair.server.assert_no_accept();
     assert!(pair.client.connections.get(&client_ch).unwrap().is_closed());
 }
+
+#[test]
+fn add_addr_handshake() {
+    // Working handshake.
+    let _guard = subscribe();
+    let server_conf = server_config();
+    let mut client_conf = client_config();
+
+    Arc::get_mut(&mut client_conf.transport)
+        .unwrap()
+        .additional_addresses(true);
+
+    let mut pair = Pair::new(Default::default(), server_conf);
+    let (client_ch, server_ch) = pair.connect_with(client_conf);
+    assert_eq!(pair.client_conn_mut(client_ch).bytes_in_flight(), 0);
+    assert_eq!(pair.server_conn_mut(server_ch).bytes_in_flight(), 0);
+    assert!(pair.client_conn_mut(client_ch).using_ecn());
+    assert!(pair.server_conn_mut(server_ch).using_ecn());
+
+    // Server advertises new addresses.
+    let additional_addresses = [
+        "127.0.0.1:4434".parse().unwrap()
+    ];
+    pair.server_conn_mut(server_ch).set_additional_addresses(&additional_addresses);
+
+    pair.drive();
+    assert_eq!(pair.client.connections.get(&client_ch).unwrap().get_additional_addresses(), &additional_addresses);
+}

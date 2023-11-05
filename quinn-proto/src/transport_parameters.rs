@@ -423,7 +423,7 @@ impl TransportParameters {
                 },
                 0xff04de1a => params.min_ack_delay = Some(r.get().unwrap()),
                 0x925adda01 => {
-                    if len != 0 || params.additional_addresses {
+                    if len != 0 || params.additional_addresses || side.is_client() {
                         return Err(Error::Malformed);
                     }
                     params.additional_addresses = true;

@@ -115,6 +115,9 @@ impl Endpoint {
                     error!(id = ch.0, "unknown connection drained");
                 }
             }
+            AdditionalAddresses(additional_addresses) => {
+
+            }
         }
         None
     }
@@ -382,6 +385,15 @@ impl Endpoint {
             });
         }
         ConnectionEvent(ConnectionEventInner::NewIdentifiers(ids, now))
+    }
+
+    fn send_additional_addresses(
+        &mut self,
+        additional_addresses: &[SocketAddr],
+    ) -> ConnectionEvent {
+        ConnectionEvent(ConnectionEventInner::AdditionalAddresses(
+            additional_addresses.to_vec(),
+        ))
     }
 
     /// Generate a connection ID for `ch`

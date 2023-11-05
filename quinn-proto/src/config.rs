@@ -316,7 +316,7 @@ impl TransportConfig {
         self
     }
 
-    /// Whether the "Additional addresses" extension is enabled on the endpoint.
+    /// Whether the "Additional addresses" extension is enabled on the client.
     pub fn additional_addresses(&mut self, enabled: bool) -> &mut Self {
         self.additional_addresses = enabled;
         self

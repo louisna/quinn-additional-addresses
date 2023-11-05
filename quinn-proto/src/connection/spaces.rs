@@ -255,6 +255,7 @@ pub struct Retransmits {
     pub(super) retire_cids: Vec<u64>,
     pub(super) ack_frequency: bool,
     pub(super) handshake_done: bool,
+    pub(super) additional_addresses: bool,
 }
 
 impl Retransmits {
@@ -272,6 +273,7 @@ impl Retransmits {
             && self.retire_cids.is_empty()
             && !self.ack_frequency
             && !self.handshake_done
+            && !self.additional_addresses
     }
 }
 

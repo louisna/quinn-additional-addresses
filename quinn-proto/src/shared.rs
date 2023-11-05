@@ -20,6 +20,8 @@ pub(crate) enum ConnectionEventInner {
     },
     /// New connection identifiers have been issued for the Connection
     NewIdentifiers(Vec<IssuedCid>, Instant),
+    /// Additional addresses for the Connection.
+    AdditionalAddresses(Vec<SocketAddr>),
 }
 
 /// Events sent from a Connection to an Endpoint
@@ -54,6 +56,8 @@ pub(crate) enum EndpointEventInner {
     /// Stop routing connection ID for this sequence number to the connection
     /// When `bool == true`, a new connection ID will be issued to peer
     RetireConnectionId(Instant, u64, bool),
+    /// Received Additional Addresses.
+    AdditionalAddresses(Vec<SocketAddr>),
 }
 
 /// Protocol-level identifier for a connection.
