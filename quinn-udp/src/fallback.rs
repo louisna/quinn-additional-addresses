@@ -34,6 +34,7 @@ impl UdpSocketState {
     ) -> Result<usize, io::Error> {
         let mut sent = 0;
         for transmit in transmits {
+            println!("TRANSMIT DATA AT DESTINATION: {:?}", transmit.destination);
             match socket.0.send_to(
                 &transmit.contents,
                 &socket2::SockAddr::from(transmit.destination),

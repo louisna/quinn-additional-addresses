@@ -589,6 +589,12 @@ impl Connection {
         // May need to send ADDITIONAL_ADDRESSES to make progress.
         conn.wake();
     }
+
+    /// Set the remote address for a specific path.
+    pub fn set_remote_addr(&self, addr: &SocketAddr) {
+        let mut conn = self.0.state.lock("set_additional_addresses");
+        conn.inner.set_remote_addr(addr);
+    }
 }
 
 pin_project! {

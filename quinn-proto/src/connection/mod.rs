@@ -383,6 +383,12 @@ impl Connection {
         this
     }
 
+    /// Set the remote addr.
+    pub fn set_remote_addr(&mut self, addr: &SocketAddr) {
+        println!("CHANGE THE REMOTE ADDR TO: {:?}", addr);
+        self.path.remote = addr.clone();
+    }
+
     /// Returns the next time at which `handle_timeout` should be called
     ///
     /// The value returned may change after:
@@ -2821,7 +2827,7 @@ impl Connection {
                 }
                 Frame::AdditionalAddresses(frame) => {
                     trace!("Received an ADDITIONAL_ADDRESSES frame: {:?}", frame);
-                    if frame.sequence > self.adda_seq_num {
+                    if frame.sequence >= self.adda_seq_num {
                         self.adda_seq_num = frame.sequence;
                         self.adda_up_to_date = false;
                         self.additional_addresses = frame

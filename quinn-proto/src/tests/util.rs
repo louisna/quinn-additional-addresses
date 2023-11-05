@@ -148,6 +148,7 @@ impl Pair {
                 self.last_spin = spin;
             }
             if let Some(ref socket) = self.client.socket {
+                eprintln!("SEND PACKET HERE AT {:?}", packet.destination);
                 socket.send_to(&buffer, packet.destination).unwrap();
             }
             if self.server.addr == packet.destination {

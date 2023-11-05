@@ -387,15 +387,6 @@ impl Endpoint {
         ConnectionEvent(ConnectionEventInner::NewIdentifiers(ids, now))
     }
 
-    fn send_additional_addresses(
-        &mut self,
-        additional_addresses: &[SocketAddr],
-    ) -> ConnectionEvent {
-        ConnectionEvent(ConnectionEventInner::AdditionalAddresses(
-            additional_addresses.to_vec(),
-        ))
-    }
-
     /// Generate a connection ID for `ch`
     fn new_cid(&mut self, ch: ConnectionHandle) -> ConnectionId {
         loop {

@@ -151,16 +151,25 @@ async fn run(options: Opt) -> Result<()> {
     let additional_addresses = conn.accept_additional_addresses().await?;
     eprintln!("CLIENT HAS ADDITIONAL ADDRESSES: {:?}", additional_addresses);
 
+    // Migrate to new address.
+    if let Some(add_addr) = additional_addresses.iter().next() {
+        let socket = std::net::UdpSocket::bind("31.133.128.242:0").unwrap();
+        let addr = socket.local_addr().unwrap();
+        eprintln!("rebinding to {addr}");
+        endpoint.rebind(socket).expect("rebind failed");
+        conn.set_remote_addr(add_addr);
+    }
+
     let (mut send, mut recv) = conn
         .open_bi()
         .await
         .map_err(|e| anyhow!("failed to open stream: {}", e))?;
-    if rebind {
-        let socket = std::net::UdpSocket::bind("[::]:0").unwrap();
-        let addr = socket.local_addr().unwrap();
-        eprintln!("rebinding to {addr}");
-        endpoint.rebind(socket).expect("rebind failed");
-    }
+    // if rebind {
+    //     let socket = std::net::UdpSocket::bind("[::]:0").unwrap();
+    //     let addr = socket.local_addr().unwrap();
+    //     eprintln!("rebinding to {addr}");
+    //     endpoint.rebind(socket).expect("rebind failed");
+    // }
 
     send.write_all(request.as_bytes())
         .await
